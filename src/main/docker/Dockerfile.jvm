@@ -1,0 +1,16 @@
+ARG TEMURIN_IMAGE="docker.io/eclipse-temurin:17.0.7_7-jre-alpine@sha256:dd8238c151293ae6a7c22898ef2f0df2af8a05786aef73ccd3248e73765969ed"
+
+FROM ${TEMURIN_IMAGE} AS runner
+
+ARG APP_DIR=/deployment
+ARG UID=1001
+
+WORKDIR ${APP_DIR}
+
+COPY --chown=444 target/*runner.jar application.jar
+
+EXPOSE 8080
+USER ${UID}:${UID}
+
+ENTRYPOINT [ "java", "-jar", "application.jar" ]
+

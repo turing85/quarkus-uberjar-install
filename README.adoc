@@ -1,0 +1,56 @@
+= Executing `./mvnw install` fails with uber-jar creation and newer version of `maven-install-plugin`
+
+== Setup
+A lot of our containerfiles do something like:
+
+.Typical containerfile
+[source,dockerfile]
+----
+...
+FROM ...
+...
+COPY ... target/*runner.jar application.jar
+...
+----
+Hence, our containerfiles rely on the fact that the jar to copy ends in `-runner.jar`.
+
+When we build an uber jar, a `${project.artifactId}-${project.version}.jar.original` is created, representing the jar before "uberfication".
+
+== Problem
+When we upgrade the `maven-install-plugin` to a version `>= 3.0.0`, the plugin execution fails with the following error:
+
+.Error when running `./mvnw clean install`
+[source,bash]
+----
+$ ./mvnw clean install
+...
+[INFO] --- maven-install-plugin:3.1.1:install (default-install) @ install-fails ---
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  13.434 s
+[INFO] Finished at: 2023-06-28T16:21:09+02:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-install-plugin:3.1.1:install (default-install) on project install-fails: The packaging plugin for this project did not assign a main file to the project but it has attachments. Change packaging to 'pom'. -> [Help 1]
+----
+
+We can prevent this problem by removing the `-runner` suffix from the uber-jar (`./mvnw ... --define quarkus.package.add-runner-suffix=false ...`), but this would break our container builds.
+
+== Proposal
+Provide an option to remove the `.original`-suffix from the original jar, or register the `runner.jar` as main file.
+
+== Acceptance criteria
+1. The current containerfile still builds
+2. `./mvnw clean install` succeeds
+
+Command to test acceptance:
+.Command to test acceptance
+[source,bash]
+----
+$ ./mvnw --define build-container clean install
+----
+
+== Workarounds
+1. Change th containerfiles, do not rely on the `runner.jar`-suffix: This might be easier said than done. Especially when other jars without the `runner.jar` suffix are created (e.g. `jar` containing the source code).
+2. Add a .dockerignore to exclude other jars like source jars: this is possible, but time-consuming since we have a lot of applications, relying on the same containerfile. We would need to add the corresponding `.dockerignore` to each of them
+3. Use another plugin (e.g. `maven-antrun-plugin`) to copy the `.jar.original` to just `.jar`: this is easy to implement (see profile `fix-with-ant-plugin`), but error-prone. We have to explicitly call the `install`-plugin in the profile, and it must be called before `maven-antrun-plugin` is called, i.e. we rely on the order of the plugins in the `pom.xml`.
